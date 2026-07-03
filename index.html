@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS Enterprise Web</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    :root { --brand: #0f172a; --accent: #2563eb; --ok: #16a34a; --warn: #f59e0b; --danger: #ef4444; }
+    * { scrollbar-width: thin; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: radial-gradient(circle at top, #f8fafc, #eef2ff 35%, #f8fafc 75%); }
+    .glass { background: rgba(255,255,255,.66); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.55); }
+    .soft { box-shadow: 0 8px 24px rgba(15, 23, 42, .08); }
+    .fade-in { animation: fade .28s ease; }
+    .slide-up { animation: slideUp .32s ease; }
+    .scale-in { animation: scaleIn .2s ease; }
+    .hidden-scroll::-webkit-scrollbar { display: none; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes scaleIn { from { transform: scale(.98); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  </style>
+</head>
+<body class="text-slate-800 min-h-screen">
+  <div class="min-h-screen flex">
+    <aside class="hidden lg:flex w-72 flex-col p-5 gap-4 border-r border-white/60 glass">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-slate-900 text-white grid place-items-center text-xl font-bold">P</div>
+        <div>
+          <p id="brandName" class="font-semibold text-lg">PrimePOS</p>
+          <p class="text-xs text-slate-500">Enterprise Local POS</p>
+        </div>
+      </div>
+      <nav id="sideNav" class="flex-1 space-y-2"></nav>
+      <button id="installBtn" class="rounded-2xl px-4 py-2 bg-slate-900 text-white text-sm">Install App</button>
+    </aside>
+
+    <div class="flex-1 min-h-screen flex flex-col">
+      <header class="sticky top-0 z-20 glass border-b border-white/60 px-4 lg:px-6 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h1 id="pageTitle" class="text-lg lg:text-xl font-semibold">Dashboard</h1>
+            <p id="pageSub" class="text-xs text-slate-500">Ringkasan performa bisnis</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="undoBtn" class="rounded-xl px-3 py-2 bg-white/80 text-sm">Undo</button>
+            <button id="redoBtn" class="rounded-xl px-3 py-2 bg-white/80 text-sm">Redo</button>
+            <button id="themeBtn" class="rounded-xl px-3 py-2 bg-white/80 text-sm">Theme</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="mainContent" class="flex-1 p-3 lg:p-6 pb-28 lg:pb-6"></main>
+    </div>
+  </div>
+
+  <div id="mobileNav" class="lg:hidden fixed bottom-0 left-0 right-0 glass border-t border-white/60 z-30 px-2 py-2"></div>
+  <button id="floatingCart" class="lg:hidden fixed right-4 bottom-20 z-30 rounded-full w-14 h-14 bg-slate-900 text-white soft text-xs">Cart</button>
+
+  <div id="modalHost" class="fixed inset-0 z-40 hidden items-center justify-center p-3 bg-slate-900/35"></div>
+  <div id="toastHost" class="fixed right-3 top-3 z-50 space-y-2"></div>
+
+  <script>
+    const NAV = [
+      { id: "dashboard", label: "Dashboard" },
+      { id: "cashier", label: "Kasir" },
+      { id: "products", label: "Produk" },
+      { id: "categories", label: "Kategori" },
+      { id: "customers", label: "Pelanggan" },
+      { id: "transactions", label: "Transaksi" },
+      { id: "stock", label: "Stok" },
+      { id: "reports", label: "Laporan" },
+      { id: "ai", label: "AI Assistant" },
+      { id: "settings", label: "Setting" }
+    ];
+
+    const i18n = {
+      id: { dashboard: "Dashboard", cashier: "Kasir", products: "Produk", customers: "Pelanggan", settings: "Setting", save: "Simpan", cancel: "Batal" },
+      en: { dashboard: "Dashboard", cashier: "Cashier", products: "Products", customers: "Customers", settings: "Settings", save: "Save", cancel: "Cancel" },
+      ja: { dashboard: "ダッシュボード", cashier: "レジ", products: "商品", customers: "顧客", settings: "設定", save: "保存", cancel: "キャンセル" },
+      zh: { dashboard: "仪表盘", cashier: "收银", products: "产品", customers: "客户", settings: "设置", save: "保存", cancel: "取消" },
+      ar: { dashboard: "لوحة التحكم", cashier: "الكاشير", products: "المنتجات", customers: "العملاء", settings: "الإعدادات", save: "حفظ", cancel: "إلغاء" },
+      ko: { dashboard: "대시보드", cashier: "계산", products: "상품", customers: "고객", settings: "설정", save: "저장", cancel: "취소" },
+      th: { dashboard: "แดชบอร์ด", cashier: "แคชเชียร์", products: "สินค้า", customers: "ลูกค้า", settings: "ตั้งค่า", save: "บันทึก", cancel: "ยกเลิก" },
+      ms: { dashboard: "Papan Pemuka", cashier: "Kaunter", products: "Produk", customers: "Pelanggan", settings: "Tetapan", save: "Simpan", cancel: "Batal" },
+      vi: { dashboard: "Bảng điều khiển", cashier: "Thu ngân", products: "Sản phẩm", customers: "Khách hàng", settings: "Cài đặt", save: "Lưu", cancel: "Hủy" },
+      fil: { dashboard: "Dashboard", cashier: "Cashier", products: "Produkto", customers: "Customer", settings: "Settings", save: "I-save", cancel: "Kanselahin" }
+    };
+
+    const DB_KEY = "prime_pos_db_v1";
+    const HISTORY_KEY = "prime_pos_history_v1";
+    const REDO_KEY = "prime_pos_redo_v1";
+
+    const seed = () => ({
+      settings: {
+        storeName: "PrimePOS Store",
+        logo: "",
+        address: "Jl. Sudirman No. 1",
+        phone: "081234567890",
+        email: "store@primepos.id",
+        website: "https://primepos.id",
+        instagram: "@primepos",
+        facebook: "primepos",
+        tiktok: "@primepos",
+        whatsapp: "6281234567890",
+        tagline: "Belanja Cepat, Pelayanan Hebat",
+        thankYou: "Terima kasih telah berbelanja.",
+        theme: "#2563eb",
+        language: "id",
+        currency: "IDR",
+        dateFormat: "id-ID",
+        taxPercent: 11,
+        servicePercent: 5
+      },
+      categories: [
+        { id: uid(), name: "Minuman", icon: "🥤", color: "#38bdf8", order: 1 },
+        { id: uid(), name: "Makanan", icon: "🍜", color: "#f97316", order: 2 },
+        { id: uid(), name: "Snack", icon: "🍪", color: "#eab308", order: 3 }
+      ],
+      products: [
+        { id: uid(), name: "Americano", emoji: "☕", photo: "", price: 24000, cost: 10000, category: "Minuman", sku: "DRK001", barcode: "899001", stock: 43, minStock: 8, unit: "cup", desc: "Kopi hitam", active: true, sold: 17, favorite: false, wishlist: false },
+        { id: uid(), name: "Mie Ayam", emoji: "🍜", photo: "", price: 32000, cost: 15000, category: "Makanan", sku: "FD001", barcode: "899002", stock: 31, minStock: 6, unit: "porsi", desc: "Mie ayam gurih", active: true, sold: 12, favorite: true, wishlist: false },
+        { id: uid(), name: "Cookies", emoji: "🍪", photo: "", price: 18000, cost: 8000, category: "Snack", sku: "SN001", barcode: "899003", stock: 20, minStock: 5, unit: "pcs", desc: "Cookies butter", active: true, sold: 9, favorite: false, wishlist: true }
+      ],
+      customers: [
+        { id: uid(), name: "Andi Pratama", phone: "081322221111", address: "Bandung", email: "andi@mail.com", joined: isoDate(), history: [], totalSpend: 0, memberLevel: "Bronze", rewardPoints: 0 }
+      ],
+      transactions: [],
+      stockLogs: [],
+      cart: [],
+      discounts: { total: 0, tax: 11, service: 5 },
+      ui: { lang: "id", page: "dashboard", paymentMethod: "Tunai", split: { Tunai: 0, QRIS: 0, Transfer: 0, "E-Wallet": 0 } },
+      ai: { provider: "OpenAI", apiKey: "", endpoint: "", model: "gpt-4o-mini" }
+    });
+
+    const App = {
+      db: load(),
+      chartRefs: {},
+      beforeInstallPrompt: null,
+      productPage: 1,
+      productPerPage: 12,
+      stockFilter: "all"
+    };
+
+    function uid() { return Math.random().toString(36).slice(2, 10); }
+    function isoDate(d = new Date()) { return d.toISOString(); }
+    function money(v) { return new Intl.NumberFormat(App.db.settings.dateFormat, { style: "currency", currency: App.db.settings.currency, maximumFractionDigits: 0 }).format(v || 0); }
+    function t(k) { return (i18n[App.db.settings.language] || i18n.id)[k] || k; }
+
+    function load() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(DB_KEY));
+        return saved ? saved : seed();
+      } catch {
+        return seed();
+      }
+    }
+
+    function snapshot() {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      history.push(JSON.stringify(App.db));
+      if (history.length > 25) history.shift();
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      localStorage.removeItem(REDO_KEY);
+    }
+
+    function save() {
+      localStorage.setItem(DB_KEY, JSON.stringify(App.db));
+    }
+
+    function mutate(fn) {
+      snapshot();
+      fn();
+      save();
+      render();
+    }
+
+    function undo() {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (!history.length) return toast("Tidak ada undo", "warn");
+      const redo = JSON.parse(localStorage.getItem(REDO_KEY) || "[]");
+      redo.push(JSON.stringify(App.db));
+      localStorage.setItem(REDO_KEY, JSON.stringify(redo));
+      App.db = JSON.parse(history.pop());
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      save();
+      render();
+    }
+
+    function redo() {
+      const redo = JSON.parse(localStorage.getItem(REDO_KEY) || "[]");
+      if (!redo.length) return toast("Tidak ada redo", "warn");
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      history.push(JSON.stringify(App.db));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      App.db = JSON.parse(redo.pop());
+      localStorage.setItem(REDO_KEY, JSON.stringify(redo));
+      save();
+      render();
+    }
+
+    function toast(message, type = "ok") {
+      const host = document.getElementById("toastHost");
+      const color = type === "ok" ? "bg-emerald-500" : type === "warn" ? "bg-amber-500" : "bg-red-500";
+      const el = document.createElement("div");
+      el.className = `${color} text-white px-4 py-2 rounded-xl soft fade-in text-sm`;
+      el.textContent = message;
+      host.appendChild(el);
+      setTimeout(() => el.remove(), 2300);
+    }
+
+    function openModal(content) {
+      const host = document.getElementById("modalHost");
+      host.innerHTML = `<div class="w-full max-w-3xl glass rounded-3xl p-4 lg:p-6 soft slide-up max-h-[90vh] overflow-auto">${content}</div>`;
+      host.classList.remove("hidden");
+      host.classList.add("flex");
+    }
+
+    function closeModal() {
+      const host = document.getElementById("modalHost");
+      host.classList.add("hidden");
+      host.classList.remove("flex");
+      host.innerHTML = "";
+    }
+
+    function confirmDialog(msg, onYes) {
+      openModal(`
+        <h3 class="text-lg font-semibold">Konfirmasi</h3>
+        <p class="mt-2 text-slate-600">${msg}</p>
+        <div class="mt-4 flex gap-2 justify-end">
+          <button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-white">Batal</button>
+          <button onclick="(${onYes})(); closeModal()" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Ya</button>
+        </div>
+      `);
+    }
+
+    function navMarkup(mobile = false) {
+      return NAV.map(n => {
+        const active = App.db.ui.page === n.id ? "bg-slate-900 text-white" : "bg-white/70";
+        return `<button data-nav="${n.id}" class="${mobile ? "flex-1" : "w-full"} rounded-2xl px-3 py-2 text-sm text-left ${active} transition">${n.label}</button>`;
+      }).join("");
+    }
+
+    function renderNav() {
+      document.getElementById("sideNav").innerHTML = navMarkup(false);
+      document.getElementById("mobileNav").innerHTML = `<div class="flex gap-1">${navMarkup(true)}</div>`;
+      document.querySelectorAll("[data-nav]").forEach(btn => btn.onclick = () => {
+        App.db.ui.page = btn.dataset.nav;
+        save();
+        render(true);
+      });
+    }
+
+    function dashboardData() {
+      const txs = App.db.transactions;
+      const today = new Date().toDateString();
+      const todayTx = txs.filter(t => new Date(t.createdAt).toDateString() === today);
+      const totalToday = todayTx.reduce((a, b) => a + b.total, 0);
+      const monthly = txs.filter(t => new Date(t.createdAt).getMonth() === new Date().getMonth()).reduce((a, b) => a + b.total, 0);
+      const sold = App.db.products.reduce((a, b) => a + (b.sold || 0), 0);
+      const topProduct = [...App.db.products].sort((a, b) => (b.sold || 0) - (a.sold || 0))[0];
+      const topCategory = Object.entries(App.db.products.reduce((m, p) => { m[p.category] = (m[p.category] || 0) + (p.sold || 0); return m; }, {})).sort((a, b) => b[1] - a[1])[0];
+      const lowStock = App.db.products.filter(p => p.stock <= p.minStock).length;
+      const outStock = App.db.products.filter(p => p.stock <= 0).length;
+      const uniqueCustomers = new Set(txs.map(t => t.customerId).filter(Boolean)).size;
+      const busyHour = Object.entries(txs.reduce((m, t) => { const h = new Date(t.createdAt).getHours(); m[h] = (m[h] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1])[0];
+      return { totalToday, trx: txs.length, monthly, sold, topProduct, topCategory, lowStock, outStock, uniqueCustomers, busyHour };
+    }
+
+    function renderDashboard() {
+      const d = dashboardData();
+      return `
+        <section class="space-y-4 fade-in">
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            ${metric("Total Penjualan Hari Ini", money(d.totalToday))}
+            ${metric("Total Transaksi", d.trx)}
+            ${metric("Omset Bulanan", money(d.monthly))}
+            ${metric("Produk Terjual", d.sold)}
+            ${metric("Jumlah Pelanggan", d.uniqueCustomers)}
+            ${metric("Stok Menipis", d.lowStock)}
+            ${metric("Produk Habis", d.outStock)}
+            ${metric("Jam Ramai", d.busyHour ? `${d.busyHour[0]}:00` : "-")}
+          </div>
+          <div class="grid lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 glass rounded-3xl p-4 soft">
+              <h3 class="font-semibold mb-2">Grafik Penjualan Harian / Mingguan / Bulanan</h3>
+              <canvas id="salesChart" height="110"></canvas>
+            </div>
+            <div class="glass rounded-3xl p-4 soft space-y-3">
+              <h3 class="font-semibold">Quick Action</h3>
+              <button onclick="go('cashier')" class="w-full rounded-2xl px-4 py-2 bg-slate-900 text-white text-left">Buka Kasir</button>
+              <button onclick="openProductForm()" class="w-full rounded-2xl px-4 py-2 bg-white text-left">Tambah Produk</button>
+              <button onclick="exportJSON()" class="w-full rounded-2xl px-4 py-2 bg-white text-left">Backup JSON</button>
+              <button onclick="go('reports')" class="w-full rounded-2xl px-4 py-2 bg-white text-left">Lihat Laporan</button>
+              <p class="text-xs text-slate-500">Produk Terlaris: ${d.topProduct ? d.topProduct.name : "-"}</p>
+              <p class="text-xs text-slate-500">Kategori Terlaris: ${d.topCategory ? d.topCategory[0] : "-"}</p>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function metric(label, value) {
+      return `<div class="glass rounded-3xl p-4 soft"><p class="text-xs text-slate-500">${label}</p><p class="text-lg lg:text-xl font-semibold mt-1">${value}</p></div>`;
+    }
+
+    function renderCashier() {
+      const q = (document.getElementById("q") || { value: "" }).value.toLowerCase();
+      const cat = (document.getElementById("catFilter") || { value: "all" }).value;
+      const start = (App.productPage - 1) * App.productPerPage;
+      const filtered = App.db.products.filter(p => p.active && p.name.toLowerCase().includes(q) && (cat === "all" || p.category === cat));
+      const chunk = filtered.slice(0, start + App.productPerPage);
+      const hasMore = chunk.length < filtered.length;
+
+      return `
+        <section class="grid lg:grid-cols-3 gap-4 fade-in">
+          <div class="lg:col-span-2 space-y-3">
+            <div class="glass rounded-3xl p-3 soft flex flex-col sm:flex-row gap-2">
+              <input id="q" class="flex-1 rounded-xl px-3 py-2 bg-white" placeholder="Search Produk / Barcode" value="${q}" />
+              <select id="catFilter" class="rounded-xl px-3 py-2 bg-white">
+                <option value="all">Semua Kategori</option>
+                ${App.db.categories.map(c => `<option ${cat === c.name ? "selected" : ""}>${c.name}</option>`).join("")}
+              </select>
+              <button onclick="scanBarcode()" class="rounded-xl px-3 py-2 bg-slate-900 text-white">Barcode</button>
+            </div>
+            <div id="productGrid" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              ${chunk.map(productCard).join("")}
+            </div>
+            ${hasMore ? `<button onclick="loadMoreProducts()" class="w-full rounded-2xl py-2 bg-white">Load More</button>` : ""}
+          </div>
+          <div class="glass rounded-3xl p-3 soft h-fit sticky top-24">
+            <h3 class="font-semibold mb-2">Keranjang</h3>
+            <div class="max-h-72 overflow-auto hidden-scroll space-y-2">${App.db.cart.length ? App.db.cart.map(cartItem).join("") : `<p class="text-sm text-slate-500">Keranjang kosong</p>`}</div>
+            <div class="mt-3 text-sm space-y-1">
+              <div class="flex justify-between"><span>Subtotal</span><b>${money(cartSubtotal())}</b></div>
+              <div class="flex justify-between"><span>Diskon Total</span><input id="dTotal" onchange="setTotalDiscount(this.value)" type="number" class="w-24 rounded-lg px-2 py-1 bg-white" value="${App.db.discounts.total}" /></div>
+              <div class="flex justify-between"><span>Pajak %</span><input id="tax" onchange="setTax(this.value)" type="number" class="w-24 rounded-lg px-2 py-1 bg-white" value="${App.db.discounts.tax}" /></div>
+              <div class="flex justify-between"><span>Service %</span><input id="svc" onchange="setService(this.value)" type="number" class="w-24 rounded-lg px-2 py-1 bg-white" value="${App.db.discounts.service}" /></div>
+              <div class="flex justify-between text-lg"><span>Total</span><b>${money(cartTotal())}</b></div>
+            </div>
+            <button onclick="openCheckout()" class="w-full mt-3 rounded-2xl py-2 bg-slate-900 text-white">Bayar</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function productCard(p) {
+      return `<div class="glass rounded-3xl p-3 soft scale-in">
+        <div class="h-24 rounded-2xl bg-slate-100 grid place-items-center text-3xl overflow-hidden">${p.photo ? `<img src="${p.photo}" class="w-full h-full object-cover"/>` : p.emoji || "📦"}</div>
+        <p class="mt-2 font-medium">${p.name}</p>
+        <p class="text-xs text-slate-500">${p.category} • Stok ${p.stock}</p>
+        <div class="flex justify-between items-center mt-2">
+          <b>${money(p.price)}</b>
+          <button onclick="addToCart('${p.id}')" class="rounded-xl px-3 py-1 bg-slate-900 text-white text-xs">Tambah</button>
+        </div>
+      </div>`;
+    }
+
+    function cartItem(i) {
+      return `<div class="bg-white/80 rounded-2xl p-2 text-sm">
+        <div class="flex justify-between"><b>${i.name}</b><button onclick="removeCart('${i.id}')" class="text-red-500">x</button></div>
+        <div class="flex items-center justify-between gap-1 mt-1">
+          <div class="flex items-center gap-1">
+            <button onclick="changeQty('${i.id}',-1)" class="px-2 bg-slate-200 rounded">-</button>
+            <span>${i.qty}</span>
+            <button onclick="changeQty('${i.id}',1)" class="px-2 bg-slate-200 rounded">+</button>
+          </div>
+          <input type="number" value="${i.discount || 0}" onchange="setItemDiscount('${i.id}',this.value)" class="w-16 rounded px-1 bg-slate-100" title="Diskon" />
+          <input value="${i.note || ""}" onchange="setItemNote('${i.id}',this.value)" class="w-24 rounded px-1 bg-slate-100" placeholder="Catatan" />
+        </div>
+      </div>`;
+    }
+
+    function cartSubtotal() { return App.db.cart.reduce((s, i) => s + (i.price * i.qty - (Number(i.discount) || 0)), 0); }
+    function cartTotal() {
+      const sub = cartSubtotal();
+      const disc = Number(App.db.discounts.total || 0);
+      const tax = sub * (Number(App.db.discounts.tax || 0) / 100);
+      const svc = sub * (Number(App.db.discounts.service || 0) / 100);
+      return Math.max(0, sub - disc + tax + svc);
+    }
+
+    function addToCart(id) {
+      mutate(() => {
+        const p = App.db.products.find(x => x.id === id);
+        if (!p || p.stock <= 0) return toast("Stok habis", "err");
+        const ex = App.db.cart.find(c => c.id === id);
+        if (ex) ex.qty += 1;
+        else App.db.cart.push({ id: p.id, name: p.name, price: p.price, qty: 1, discount: 0, note: "" });
+      });
+    }
+
+    function changeQty(id, d) { mutate(() => { const i = App.db.cart.find(x => x.id === id); if (!i) return; i.qty = Math.max(1, i.qty + d); }); }
+    function removeCart(id) { mutate(() => App.db.cart = App.db.cart.filter(x => x.id !== id)); }
+    function setItemDiscount(id, v) { mutate(() => { const i = App.db.cart.find(x => x.id === id); if (i) i.discount = Number(v || 0); }); }
+    function setItemNote(id, v) { mutate(() => { const i = App.db.cart.find(x => x.id === id); if (i) i.note = v; }); }
+    function setTotalDiscount(v) { mutate(() => App.db.discounts.total = Number(v || 0)); }
+    function setTax(v) { mutate(() => App.db.discounts.tax = Number(v || 0)); }
+    function setService(v) { mutate(() => App.db.discounts.service = Number(v || 0)); }
+    function loadMoreProducts() { App.productPage += 1; render(); }
+    function scanBarcode() { const code = prompt("Masukkan barcode"); if (!code) return; const p = App.db.products.find(x => x.barcode === code); p ? addToCart(p.id) : toast("Produk tidak ditemukan", "warn"); }
+
+    function openCheckout() {
+      if (!App.db.cart.length) return toast("Keranjang kosong", "warn");
+      const total = cartTotal();
+      openModal(`
+        <h3 class="text-lg font-semibold">Pembayaran</h3>
+        <div class="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
+          <div><label>Pelanggan</label><select id="payCustomer" class="w-full rounded-xl px-3 py-2 bg-white"><option value="">Umum</option>${App.db.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join("")}</select></div>
+          <div><label>Kasir</label><input id="cashierName" class="w-full rounded-xl px-3 py-2 bg-white" value="Admin"/></div>
+          <div><label>Metode</label><select id="payMethod" class="w-full rounded-xl px-3 py-2 bg-white" onchange="toggleSplit(this.value)"><option>Tunai</option><option>QRIS</option><option>Transfer</option><option>E-Wallet</option><option>Split Payment</option></select></div>
+          <div><label>Bayar</label><input id="payAmount" type="number" class="w-full rounded-xl px-3 py-2 bg-white" value="${total}"/></div>
+        </div>
+        <div id="splitWrap" class="hidden mt-3 grid grid-cols-2 gap-2 text-sm">
+          ${["Tunai","QRIS","Transfer","E-Wallet"].map(m => `<div><label>${m}</label><input data-split="${m}" type="number" class="w-full rounded-xl px-3 py-2 bg-white" value="0"></div>`).join("")}
+        </div>
+        <div class="mt-3 flex justify-between text-sm"><span>Total</span><b>${money(total)}</b></div>
+        <div class="mt-4 flex justify-end gap-2">
+          <button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-white">Batal</button>
+          <button onclick="payNow()" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Konfirmasi</button>
+        </div>
+      `);
+    }
+
+    function toggleSplit(v) {
+      document.getElementById("splitWrap").classList.toggle("hidden", v !== "Split Payment");
+    }
+
+    function payNow() {
+      const method = document.getElementById("payMethod").value;
+      const pay = Number(document.getElementById("payAmount").value || 0);
+      const total = cartTotal();
+      const customerId = document.getElementById("payCustomer").value;
+      const cashier = document.getElementById("cashierName").value || "Admin";
+      let split = null;
+      if (method === "Split Payment") {
+        split = {};
+        let sum = 0;
+        document.querySelectorAll("[data-split]").forEach(i => { split[i.dataset.split] = Number(i.value || 0); sum += Number(i.value || 0); });
+        if (sum < total) return toast("Split belum cukup", "err");
+      }
+      if (pay < total && method !== "Split Payment") return toast("Pembayaran kurang", "err");
+
+      mutate(() => {
+        const trx = {
+          id: "INV" + Date.now(),
+          createdAt: isoDate(),
+          items: App.db.cart.map(i => ({ ...i })),
+          subtotal: cartSubtotal(),
+          discount: Number(App.db.discounts.total || 0),
+          tax: Number(App.db.discounts.tax || 0),
+          service: Number(App.db.discounts.service || 0),
+          total,
+          paid: method === "Split Payment" ? Object.values(split).reduce((a, b) => a + b, 0) : pay,
+          change: method === "Split Payment" ? Object.values(split).reduce((a, b) => a + b, 0) - total : pay - total,
+          method,
+          split,
+          customerId,
+          cashier,
+          status: "paid"
+        };
+        App.db.transactions.unshift(trx);
+
+        trx.items.forEach(it => {
+          const p = App.db.products.find(x => x.id === it.id);
+          if (p) {
+            p.stock = Math.max(0, p.stock - it.qty);
+            p.sold = (p.sold || 0) + it.qty;
+            App.db.stockLogs.unshift({ id: uid(), productId: p.id, type: "Stock Keluar", qty: it.qty, date: isoDate(), note: "Penjualan " + trx.id });
+          }
+        });
+
+        if (customerId) {
+          const c = App.db.customers.find(x => x.id === customerId);
+          if (c) {
+            c.history.unshift(trx.id);
+            c.totalSpend += total;
+            c.rewardPoints += Math.floor(total / 10000);
+            c.memberLevel = c.totalSpend > 10000000 ? "Platinum" : c.totalSpend > 5000000 ? "Gold" : c.totalSpend > 1000000 ? "Silver" : "Bronze";
+          }
+        }
+        App.db.cart = [];
+      });
+
+      closeModal();
+      openReceipt(App.db.transactions[0]);
+      toast("Pembayaran berhasil");
+    }
+
+    function receiptHTML(trx) {
+      const s = App.db.settings;
+      return `<div id="receiptArea" class="bg-white text-black rounded-2xl p-4 w-full max-w-md mx-auto text-sm">
+        <div class="text-center">
+          ${s.logo ? `<img src="${s.logo}" class="w-16 h-16 rounded mx-auto object-cover"/>` : ""}
+          <h3 class="font-bold text-lg">${s.storeName}</h3>
+          <p>${s.address}</p><p>${s.phone}</p><p>${s.instagram} | ${s.website}</p>
+          <p class="italic">${s.tagline}</p>
+        </div>
+        <hr class="my-2"/>
+        <p>Invoice: ${trx.id}</p>
+        <p>Tanggal: ${new Date(trx.createdAt).toLocaleDateString(s.dateFormat)} ${new Date(trx.createdAt).toLocaleTimeString(s.dateFormat)}</p>
+        <p>Kasir: ${trx.cashier}</p>
+        <hr class="my-2"/>
+        ${trx.items.map(i => `<div class='flex justify-between'><span>${i.name} x${i.qty}</span><span>${money(i.price * i.qty - (i.discount||0))}</span></div>${i.note ? `<p class='text-xs'>${i.note}</p>` : ""}`).join("")}
+        <hr class="my-2"/>
+        <div class="flex justify-between"><span>Total</span><b>${money(trx.total)}</b></div>
+        <div class="flex justify-between"><span>Bayar</span><span>${money(trx.paid)}</span></div>
+        <div class="flex justify-between"><span>Kembali</span><span>${money(trx.change)}</span></div>
+        <div id="qrcode" class="mt-3 grid place-items-center"></div>
+        <svg id="barcode" class="mx-auto mt-2" width="180" height="40"></svg>
+        <p class="text-center mt-2">${s.thankYou}</p>
+      </div>`;
+    }
+
+    function openReceipt(trx) {
+      openModal(`
+        <h3 class="text-lg font-semibold mb-2">Struk</h3>
+        ${receiptHTML(trx)}
+        <div class="mt-3 flex flex-wrap gap-2 justify-center">
+          <button onclick="printReceipt()" class="px-3 py-2 rounded-xl bg-white">Print</button>
+          <button onclick="downloadPDF()" class="px-3 py-2 rounded-xl bg-white">Download PDF</button>
+          <button onclick="downloadPNG()" class="px-3 py-2 rounded-xl bg-white">Download PNG</button>
+          <button onclick="shareWA()" class="px-3 py-2 rounded-xl bg-white">Share WhatsApp</button>
+          <button onclick="shareTG()" class="px-3 py-2 rounded-xl bg-white">Share Telegram</button>
+          <button onclick="copyReceiptText()" class="px-3 py-2 rounded-xl bg-slate-900 text-white">Copy Text</button>
+        </div>
+      `);
+      const trxCode = `INV:${trx.id};TOTAL:${trx.total}`;
+      QRCode.toCanvas(document.createElement("canvas"), trxCode, { width: 96 }, (e, canvas) => { if (!e) document.getElementById("qrcode").appendChild(canvas); });
+      drawBarcode("barcode", trx.id);
+    }
+
+    function drawBarcode(id, text) {
+      const svg = document.getElementById(id);
+      svg.innerHTML = "";
+      [...text].forEach((c, idx) => {
+        const val = c.charCodeAt(0);
+        for (let i = 0; i < 7; i++) {
+          if ((val >> i) & 1) {
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", idx * 12 + i * 1.4);
+            rect.setAttribute("y", 2);
+            rect.setAttribute("width", 1);
+            rect.setAttribute("height", 30);
+            rect.setAttribute("fill", "black");
+            svg.appendChild(rect);
+          }
+        }
+      });
+    }
+
+    function printReceipt() { window.print(); }
+    async function downloadPNG() {
+      const c = await html2canvas(document.getElementById("receiptArea"));
+      const a = document.createElement("a");
+      a.href = c.toDataURL("image/png");
+      a.download = "receipt.png";
+      a.click();
+    }
+    async function downloadPDF() {
+      const c = await html2canvas(document.getElementById("receiptArea"));
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: "px", format: [c.width, c.height] });
+      pdf.addImage(c.toDataURL("image/png"), "PNG", 0, 0, c.width, c.height);
+      pdf.save("receipt.pdf");
+    }
+    function receiptText() {
+      const t = App.db.transactions[0];
+      if (!t) return "";
+      return `${App.db.settings.storeName}\n${t.id}\nTotal: ${money(t.total)}\nBayar: ${money(t.paid)}\nKembali: ${money(t.change)}`;
+    }
+    function shareWA() { window.open(`https://wa.me/?text=${encodeURIComponent(receiptText())}`, "_blank"); }
+    function shareTG() { window.open(`https://t.me/share/url?url=${encodeURIComponent(location.href)}&text=${encodeURIComponent(receiptText())}`, "_blank"); }
+    async function copyReceiptText() { await navigator.clipboard.writeText(receiptText()); toast("Teks struk disalin"); }
+
+    function renderProducts() {
+      return `<section class="space-y-3 fade-in">
+        <div class="flex flex-wrap gap-2 justify-between">
+          <input id="pSearch" class="rounded-xl px-3 py-2 bg-white" placeholder="Search produk" oninput="render()" />
+          <div class="flex gap-2">
+            <button onclick="importProducts()" class="rounded-xl px-3 py-2 bg-white">Import Produk</button>
+            <button onclick="exportProducts()" class="rounded-xl px-3 py-2 bg-white">Export Produk</button>
+            <button onclick="openProductForm()" class="rounded-xl px-3 py-2 bg-slate-900 text-white">Tambah Produk</button>
+          </div>
+        </div>
+        <div class="overflow-auto glass rounded-3xl p-3 soft">
+          <table class="w-full text-sm">
+            <thead><tr class="text-left"><th>Produk</th><th>Kategori</th><th>Harga</th><th>Stock</th><th>SKU</th><th>Status</th><th>Aksi</th></tr></thead>
+            <tbody>${App.db.products.map(p => `<tr class="border-t border-slate-100"><td>${p.emoji} ${p.name}</td><td>${p.category}</td><td>${money(p.price)}</td><td>${p.stock}</td><td>${p.sku}</td><td>${p.active ? "Aktif" : "Nonaktif"}</td><td><button onclick="openProductForm('${p.id}')">Edit</button> <button onclick="deleteProduct('${p.id}')" class="text-red-500">Hapus</button> <button onclick="toggleFav('${p.id}')">${p.favorite ? "Favorit" : "-"}</button></td></tr>`).join("")}</tbody>
+          </table>
+        </div>
+      </section>`;
+    }
+
+    function openProductForm(id = "") {
+      const p = App.db.products.find(x => x.id === id) || { id: "", name: "", emoji: "📦", photo: "", price: 0, cost: 0, category: App.db.categories[0]?.name || "", sku: "", barcode: "", stock: 0, minStock: 0, unit: "pcs", desc: "", active: true };
+      openModal(`
+        <h3 class="text-lg font-semibold">${id ? "Edit" : "Tambah"} Produk</h3>
+        <div class="grid sm:grid-cols-2 gap-2 mt-3 text-sm">
+          ${input("prName","Nama",p.name)}${input("prEmoji","Emoji",p.emoji)}
+          ${input("prPhoto","Foto URL",p.photo)}<div><label>Upload Foto</label><input type="file" id="prUpload" class="w-full bg-white rounded-xl px-3 py-2" accept="image/*"></div>
+          ${input("prPrice","Harga",p.price,"number")}${input("prCost","Modal",p.cost,"number")}
+          <div><label>Kategori</label><select id="prCat" class="w-full rounded-xl bg-white px-3 py-2">${App.db.categories.map(c => `<option ${p.category === c.name ? "selected" : ""}>${c.name}</option>`).join("")}</select></div>
+          ${input("prSku","SKU",p.sku)}${input("prBarcode","Barcode",p.barcode)}${input("prStock","Stock",p.stock,"number")}${input("prMin","Minimum Stock",p.minStock,"number")}
+          ${input("prUnit","Satuan",p.unit)}${input("prDesc","Deskripsi",p.desc)}
+          <div><label>Status Aktif</label><select id="prActive" class="w-full rounded-xl bg-white px-3 py-2"><option value="1" ${p.active ? "selected" : ""}>Aktif</option><option value="0" ${!p.active ? "selected" : ""}>Nonaktif</option></select></div>
+        </div>
+        <div class="mt-4 flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-white">Batal</button><button onclick="saveProduct('${id}')" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Simpan</button></div>
+      `);
+      document.getElementById("prUpload").onchange = (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = () => document.getElementById("prPhoto").value = r.result;
+        r.readAsDataURL(f);
+      };
+    }
+
+    function input(id,label,val="",type="text") { return `<div><label>${label}</label><input id="${id}" type="${type}" class="w-full rounded-xl bg-white px-3 py-2" value="${String(val).replaceAll('"','&quot;')}"></div>`; }
+
+    function saveProduct(id="") {
+      const p = {
+        id: id || uid(),
+        name: v("prName"), emoji: v("prEmoji"), photo: v("prPhoto"), price: Number(v("prPrice")||0), cost: Number(v("prCost")||0), category: v("prCat"),
+        sku: v("prSku"), barcode: v("prBarcode"), stock: Number(v("prStock")||0), minStock: Number(v("prMin")||0), unit: v("prUnit"), desc: v("prDesc"), active: v("prActive") === "1", sold: 0, favorite: false, wishlist: false
+      };
+      mutate(() => {
+        if (id) {
+          const idx = App.db.products.findIndex(x => x.id === id);
+          p.sold = App.db.products[idx].sold || 0;
+          p.favorite = App.db.products[idx].favorite || false;
+          p.wishlist = App.db.products[idx].wishlist || false;
+          App.db.products[idx] = p;
+        } else App.db.products.unshift(p);
+      });
+      closeModal();
+    }
+
+    function deleteProduct(id) { confirmDialog("Hapus produk ini?", `() => mutate(() => App.db.products = App.db.products.filter(x => x.id !== '${id}'))`); }
+    function toggleFav(id) { mutate(() => { const p = App.db.products.find(x => x.id === id); if (p) p.favorite = !p.favorite; }); }
+    function importProducts() { const data = prompt("Paste JSON produk"); if (!data) return; try { const arr = JSON.parse(data); mutate(() => App.db.products = [...arr, ...App.db.products]); } catch { toast("JSON invalid", "err"); } }
+    function exportProducts() { download("products.json", JSON.stringify(App.db.products, null, 2), "application/json"); }
+
+    function renderCategories() {
+      return `<section class="space-y-3 fade-in"><div class="flex justify-end"><button onclick="openCategoryForm()" class="rounded-xl px-3 py-2 bg-slate-900 text-white">Tambah Kategori</button></div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${App.db.categories.sort((a,b)=>a.order-b.order).map(c => `<div draggable="true" ondragstart="dragCat(event,'${c.id}')" ondrop="dropCat(event,'${c.id}')" ondragover="event.preventDefault()" class="glass rounded-3xl p-4 soft"><p class="text-xl">${c.icon}</p><p class="font-semibold">${c.name}</p><p class="text-xs" style="color:${c.color}">${c.color}</p><div class="mt-2 flex gap-2"><button onclick="openCategoryForm('${c.id}')">Edit</button><button onclick="deleteCategory('${c.id}')" class="text-red-500">Hapus</button></div></div>`).join("")}</div></section>`;
+    }
+
+    let dragCategoryId = null;
+    function dragCat(e,id){ dragCategoryId = id; }
+    function dropCat(e,id){ e.preventDefault(); if(!dragCategoryId || dragCategoryId===id) return; mutate(()=>{ const arr = App.db.categories; const a = arr.findIndex(x=>x.id===dragCategoryId); const b = arr.findIndex(x=>x.id===id); [arr[a],arr[b]]=[arr[b],arr[a]]; arr.forEach((x,i)=>x.order=i+1); }); }
+    function openCategoryForm(id="") {
+      const c = App.db.categories.find(x => x.id === id) || { id: "", name: "", icon: "📁", color: "#94a3b8", order: App.db.categories.length + 1 };
+      openModal(`<h3 class="text-lg font-semibold">${id ? "Edit" : "Tambah"} Kategori</h3><div class="grid sm:grid-cols-2 gap-2 mt-3">${input("catName","Nama",c.name)}${input("catIcon","Icon",c.icon)}${input("catColor","Warna",c.color)}${input("catOrder","Urutan",c.order,"number")}</div><div class="mt-4 flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-white">Batal</button><button onclick="saveCategory('${id}')" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Simpan</button></div>`);
+    }
+    function saveCategory(id="") { const c = { id: id || uid(), name: v("catName"), icon: v("catIcon"), color: v("catColor"), order: Number(v("catOrder")||0) }; mutate(()=>{ if(id){ const i=App.db.categories.findIndex(x=>x.id===id); App.db.categories[i]=c; } else App.db.categories.push(c); }); closeModal(); }
+    function deleteCategory(id){ mutate(()=>App.db.categories=App.db.categories.filter(x=>x.id!==id)); }
+
+    function renderCustomers() {
+      return `<section class="space-y-3 fade-in"><div class="flex justify-end"><button onclick="openCustomerForm()" class="rounded-xl px-3 py-2 bg-slate-900 text-white">Tambah Pelanggan</button></div>
+      <div class="overflow-auto glass rounded-3xl p-3 soft"><table class="w-full text-sm"><thead><tr><th>Nama</th><th>No HP</th><th>Email</th><th>Bergabung</th><th>Total Belanja</th><th>Level</th><th>Poin</th><th>Aksi</th></tr></thead>
+      <tbody>${App.db.customers.map(c=>`<tr class="border-t border-slate-100"><td>${c.name}</td><td>${c.phone}</td><td>${c.email}</td><td>${new Date(c.joined).toLocaleDateString()}</td><td>${money(c.totalSpend)}</td><td>${c.memberLevel}</td><td>${c.rewardPoints}</td><td><button onclick="openCustomerForm('${c.id}')">Edit</button> <button class="text-red-500" onclick="deleteCustomer('${c.id}')">Hapus</button></td></tr>`).join("")}</tbody></table></div></section>`;
+    }
+    function openCustomerForm(id="") {
+      const c = App.db.customers.find(x=>x.id===id) || { id:"", name:"", phone:"", address:"", email:"", joined: isoDate(), history:[], totalSpend:0, memberLevel:"Bronze", rewardPoints:0 };
+      openModal(`<h3 class="text-lg font-semibold">${id?"Edit":"Tambah"} Pelanggan</h3><div class="grid sm:grid-cols-2 gap-2 mt-3">${input("cuName","Nama",c.name)}${input("cuPhone","No HP",c.phone)}${input("cuAddress","Alamat",c.address)}${input("cuEmail","Email",c.email)}<div><label>Tanggal Bergabung</label><input id="cuJoined" type="date" class="w-full rounded-xl bg-white px-3 py-2" value="${new Date(c.joined).toISOString().slice(0,10)}"></div></div><div class="mt-4 flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-white">Batal</button><button onclick="saveCustomer('${id}')" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Simpan</button></div>`);
+    }
+    function saveCustomer(id=""){ const c={ id:id||uid(), name:v("cuName"), phone:v("cuPhone"), address:v("cuAddress"), email:v("cuEmail"), joined:new Date(v("cuJoined")).toISOString(), history:[], totalSpend:0, memberLevel:"Bronze", rewardPoints:0 }; mutate(()=>{ if(id){ const old=App.db.customers.find(x=>x.id===id); c.history=old.history; c.totalSpend=old.totalSpend; c.memberLevel=old.memberLevel; c.rewardPoints=old.rewardPoints; App.db.customers[App.db.customers.findIndex(x=>x.id===id)]=c; } else App.db.customers.unshift(c); }); closeModal(); }
+    function deleteCustomer(id){ mutate(()=>App.db.customers=App.db.customers.filter(x=>x.id!==id)); }
+
+    function renderTransactions() {
+      const q = (document.getElementById("trxQ")||{value:""}).value.toLowerCase();
+      const f = (document.getElementById("trxF")||{value:"all"}).value;
+      const arr = App.db.transactions.filter(t=>(f==="all"||t.status===f) && (t.id.toLowerCase().includes(q)|| (t.method||"").toLowerCase().includes(q)));
+      return `<section class="space-y-3 fade-in"><div class="glass rounded-3xl p-3 flex flex-wrap gap-2"><input id="trxQ" placeholder="Search" value="${q}" class="rounded-xl px-3 py-2 bg-white" oninput="render()"/><select id="trxF" class="rounded-xl px-3 py-2 bg-white" onchange="render()"><option value="all">Semua</option><option value="paid" ${f==="paid"?"selected":""}>Paid</option><option value="refund" ${f==="refund"?"selected":""}>Refund</option><option value="void" ${f==="void"?"selected":""}>Void</option></select><button onclick="exportCSV('transactions')" class="rounded-xl px-3 py-2 bg-white">Export CSV</button><button onclick="exportExcel('transactions')" class="rounded-xl px-3 py-2 bg-white">Export Excel</button><button onclick="window.print()" class="rounded-xl px-3 py-2 bg-white">Print</button></div>
+      <div class="overflow-auto glass rounded-3xl p-3 soft"><table class="w-full text-sm"><thead><tr><th>Invoice</th><th>Tanggal</th><th>Total</th><th>Metode</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${arr.map(t=>`<tr class="border-t border-slate-100"><td>${t.id}</td><td>${new Date(t.createdAt).toLocaleString()}</td><td>${money(t.total)}</td><td>${t.method}</td><td>${t.status}</td><td><button onclick="duplicateTrx('${t.id}')">Duplicate</button> <button onclick="refundTrx('${t.id}')">Refund</button> <button onclick="voidTrx('${t.id}')">Void</button> <button onclick="openReceiptById('${t.id}')">Struk</button></td></tr>`).join("")}</tbody></table></div></section>`;
+    }
+    function duplicateTrx(id){ const t=App.db.transactions.find(x=>x.id===id); if(!t) return; mutate(()=>{ App.db.cart=t.items.map(i=>({...i})); App.db.ui.page="cashier"; }); }
+    function refundTrx(id){ mutate(()=>{ const t=App.db.transactions.find(x=>x.id===id); if(t&&t.status==="paid"){ t.status="refund"; t.items.forEach(it=>{ const p=App.db.products.find(x=>x.id===it.id); if(p) p.stock += it.qty; }); } }); }
+    function voidTrx(id){ mutate(()=>{ const t=App.db.transactions.find(x=>x.id===id); if(t) t.status="void"; }); }
+    function openReceiptById(id){ const t=App.db.transactions.find(x=>x.id===id); if(t) openReceipt(t); }
+
+    function renderStock() {
+      const low = App.db.products.filter(p => p.stock <= p.minStock);
+      return `<section class="space-y-3 fade-in">
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div class="glass rounded-3xl p-3 soft"><h3 class="font-semibold">Notifikasi Stock Minimum</h3>${low.length ? low.map(p=>`<p class="text-sm">${p.name}: ${p.stock}/${p.minStock}</p>`).join("") : `<p class="text-sm text-slate-500">Aman</p>`}</div>
+          <div class="glass rounded-3xl p-3 soft"><h3 class="font-semibold">Aksi Stok</h3><button onclick="openStockAction('in')" class="mt-2 rounded-xl px-3 py-2 bg-white">Stock Masuk</button> <button onclick="openStockAction('out')" class="mt-2 rounded-xl px-3 py-2 bg-white">Stock Keluar</button> <button onclick="openStockAction('restock')" class="mt-2 rounded-xl px-3 py-2 bg-slate-900 text-white">Restock</button></div>
+        </div>
+        <div class="overflow-auto glass rounded-3xl p-3 soft"><table class="w-full text-sm"><thead><tr><th>Tanggal</th><th>Produk</th><th>Tipe</th><th>Qty</th><th>Catatan</th></tr></thead><tbody>${App.db.stockLogs.map(l=>`<tr class="border-t border-slate-100"><td>${new Date(l.date).toLocaleString()}</td><td>${App.db.products.find(p=>p.id===l.productId)?.name||"-"}</td><td>${l.type}</td><td>${l.qty}</td><td>${l.note||""}</td></tr>`).join("")}</tbody></table></div>
+      </section>`;
+    }
+    function openStockAction(type){ openModal(`<h3 class="text-lg font-semibold">${type.toUpperCase()}</h3><div class="grid sm:grid-cols-2 gap-2 mt-3"><div><label>Produk</label><select id="stProduct" class="w-full rounded-xl bg-white px-3 py-2">${App.db.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join("")}</select></div>${input("stQty","Qty",1,"number")}${input("stNote","Catatan","")}</div><div class="mt-4 flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-white">Batal</button><button onclick="saveStockAction('${type}')" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Simpan</button></div>`); }
+    function saveStockAction(type){ mutate(()=>{ const id=v("stProduct"), qty=Number(v("stQty")||0), note=v("stNote"); const p=App.db.products.find(x=>x.id===id); if(!p||qty<=0) return; if(type==="out") p.stock=Math.max(0,p.stock-qty); else p.stock += qty; App.db.stockLogs.unshift({ id:uid(), productId:id, type:type==="in"?"Stock Masuk":type==="out"?"Stock Keluar":"Restock", qty, date:isoDate(), note }); }); closeModal(); }
+
+    function reportData(range="monthly") {
+      const now = new Date();
+      return App.db.transactions.filter(t => {
+        const d = new Date(t.createdAt);
+        if (range === "daily") return d.toDateString() === now.toDateString();
+        if (range === "weekly") return (now - d) / 86400000 <= 7;
+        if (range === "monthly") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        if (range === "yearly") return d.getFullYear() === now.getFullYear();
+        return true;
+      });
+    }
+
+    function renderReports() {
+      const range = (document.getElementById("repRange") || { value: "monthly" }).value;
+      const arr = reportData(range);
+      const total = arr.reduce((a,b)=>a+b.total,0);
+      const byPay = Object.entries(arr.reduce((m,t)=>{m[t.method]=(m[t.method]||0)+t.total; return m;},{}));
+      return `<section class="space-y-3 fade-in"><div class="glass rounded-3xl p-3 flex flex-wrap gap-2"><select id="repRange" class="rounded-xl px-3 py-2 bg-white" onchange="render()"><option value="daily" ${range==="daily"?"selected":""}>Harian</option><option value="weekly" ${range==="weekly"?"selected":""}>Mingguan</option><option value="monthly" ${range==="monthly"?"selected":""}>Bulanan</option><option value="yearly" ${range==="yearly"?"selected":""}>Tahunan</option></select><button onclick="exportCSV('reports')" class="rounded-xl px-3 py-2 bg-white">CSV</button><button onclick="exportExcel('reports')" class="rounded-xl px-3 py-2 bg-white">Excel</button><button onclick="exportPDFReport()" class="rounded-xl px-3 py-2 bg-white">PDF</button><button onclick="window.print()" class="rounded-xl px-3 py-2 bg-white">Print</button></div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">${metric("Total Omset",money(total))}${metric("Jumlah Transaksi",arr.length)}${metric("Per Produk",App.db.products.length)}${metric("Per Pelanggan",App.db.customers.length)}</div>
+      <div class="glass rounded-3xl p-4 soft"><h3 class="font-semibold mb-2">Per Pembayaran</h3>${byPay.map(([k,v])=>`<div class="flex justify-between text-sm"><span>${k}</span><b>${money(v)}</b></div>`).join("") || `<p class="text-sm text-slate-500">Belum ada data</p>`}</div></section>`;
+    }
+    async function exportPDFReport(){ const c = await html2canvas(document.getElementById("mainContent")); const { jsPDF } = window.jspdf; const pdf = new jsPDF({ unit:"px", format:[c.width,c.height] }); pdf.addImage(c.toDataURL("image/png"), "PNG",0,0,c.width,c.height); pdf.save("report.pdf"); }
+
+    function renderAI() {
+      return `<section class="space-y-3 fade-in"><div class="glass rounded-3xl p-4 soft space-y-3">
+        <h3 class="font-semibold">AI Assistant</h3>
+        <div class="grid sm:grid-cols-2 gap-2">
+          <div><label>Provider</label><select id="aiProvider" class="w-full rounded-xl px-3 py-2 bg-white"><option ${App.db.ai.provider==="OpenAI"?"selected":""}>OpenAI</option><option ${App.db.ai.provider==="Gemini"?"selected":""}>Gemini</option><option ${App.db.ai.provider==="Claude"?"selected":""}>Claude</option><option ${App.db.ai.provider==="OpenRouter"?"selected":""}>OpenRouter</option><option ${App.db.ai.provider==="Custom API"?"selected":""}>Custom API</option></select></div>
+          ${input("aiModel","Model",App.db.ai.model)}
+          ${input("aiKey","API Key",App.db.ai.apiKey)}${input("aiEndpoint","Custom Endpoint",App.db.ai.endpoint)}
+        </div>
+        <textarea id="aiPrompt" class="w-full h-28 rounded-xl px-3 py-2 bg-white" placeholder="Minta analisa promo, diskon, bundling, prediksi, stok"></textarea>
+        <div class="flex gap-2"><button onclick="saveAIConfig()" class="rounded-xl px-3 py-2 bg-white">Simpan Konfigurasi</button><button onclick="runAI()" class="rounded-xl px-3 py-2 bg-slate-900 text-white">Jalankan AI</button></div>
+        <pre id="aiResult" class="bg-slate-900 text-slate-100 rounded-2xl p-3 text-xs whitespace-pre-wrap">AI siap membantu.</pre>
+      </div></section>`;
+    }
+
+    function saveAIConfig(){ mutate(()=>{ App.db.ai.provider=v("aiProvider"); App.db.ai.model=v("aiModel"); App.db.ai.apiKey=v("aiKey"); App.db.ai.endpoint=v("aiEndpoint"); }); toast("Konfigurasi AI disimpan"); }
+
+    async function runAI() {
+      const prompt = v("aiPrompt") || "Berikan analisa penjualan hari ini dan rekomendasi promo";
+      const metrics = dashboardData();
+      const localAnswer = `Analisa Otomatis:\n- Omset hari ini: ${money(metrics.totalToday)}\n- Produk terjual: ${metrics.sold}\n- Produk terlaris: ${metrics.topProduct ? metrics.topProduct.name : "-"}\n- Stok menipis: ${metrics.lowStock}\n\nRekomendasi:\n1. Promo bundling produk terlaris + snack diskon 10%.\n2. Happy hour pada jam ${metrics.busyHour ? metrics.busyHour[0] : "17"}:00 untuk menaikkan repeat order.\n3. Restock prioritas pada kategori ${metrics.topCategory ? metrics.topCategory[0] : "utama"}.\n4. Kirim kampanye WA ke pelanggan Silver/Gold untuk upsell.`;
+
+      const provider = v("aiProvider");
+      const key = v("aiKey");
+      const endpoint = v("aiEndpoint");
+      if (!key && provider !== "Custom API") {
+        document.getElementById("aiResult").textContent = localAnswer;
+        return;
+      }
+      try {
+        let url = "", headers = { "Content-Type": "application/json" }, body = {};
+        if (provider === "OpenAI") {
+          url = "https://api.openai.com/v1/chat/completions";
+          headers.Authorization = `Bearer ${key}`;
+          body = { model: v("aiModel") || "gpt-4o-mini", messages: [{ role: "system", content: "Anda analis POS" }, { role: "user", content: `${prompt}\nData:${JSON.stringify(metrics)}` }] };
+        } else if (provider === "OpenRouter") {
+          url = "https://openrouter.ai/api/v1/chat/completions";
+          headers.Authorization = `Bearer ${key}`;
+          body = { model: v("aiModel") || "openai/gpt-4o-mini", messages: [{ role: "user", content: `${prompt}\nData:${JSON.stringify(metrics)}` }] };
+        } else if (provider === "Custom API") {
+          url = endpoint;
+          body = { prompt, metrics };
+          if (key) headers.Authorization = `Bearer ${key}`;
+        } else {
+          document.getElementById("aiResult").textContent = localAnswer + "\n\nProvider ini membutuhkan endpoint proxy backend.";
+          return;
+        }
+        const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content || data.output_text || data.result || JSON.stringify(data, null, 2);
+        document.getElementById("aiResult").textContent = text;
+      } catch (e) {
+        document.getElementById("aiResult").textContent = localAnswer + "\n\nFallback karena error API: " + e.message;
+      }
+    }
+
+    function renderSettings() {
+      const s = App.db.settings;
+      return `<section class="space-y-3 fade-in">
+        <div class="glass rounded-3xl p-4 soft grid sm:grid-cols-2 gap-2 text-sm">
+          ${input("stName","Nama Toko",s.storeName)}${input("stLogo","Logo URL",s.logo)}${input("stAddress","Alamat",s.address)}${input("stPhone","Telepon",s.phone)}${input("stEmail","Email",s.email)}${input("stWeb","Website",s.website)}${input("stIg","Instagram",s.instagram)}${input("stFb","Facebook",s.facebook)}${input("stTt","TikTok",s.tiktok)}${input("stWa","WhatsApp",s.whatsapp)}${input("stTag","Tagline",s.tagline)}${input("stThank","Ucapan Terima Kasih",s.thankYou)}
+          <div><label>Bahasa</label><select id="stLang" class="w-full rounded-xl bg-white px-3 py-2"><option value="id">Indonesia</option><option value="en">English</option><option value="ja">Japanese</option><option value="zh">Chinese</option><option value="ar">Arabic</option><option value="ko">Korean</option><option value="th">Thailand</option><option value="ms">Malaysia</option><option value="vi">Vietnam</option><option value="fil">Filipina</option></select></div>
+          <div><label>Mata Uang</label><input id="stCurrency" class="w-full rounded-xl bg-white px-3 py-2" value="${s.currency}"></div>
+          <div><label>Format Tanggal</label><input id="stDate" class="w-full rounded-xl bg-white px-3 py-2" value="${s.dateFormat}"></div>
+          <div><label>Format Pajak %</label><input id="stTax" type="number" class="w-full rounded-xl bg-white px-3 py-2" value="${s.taxPercent}"></div>
+          <div><label>Tema</label><input id="stTheme" class="w-full rounded-xl bg-white px-3 py-2" value="${s.theme}"></div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="saveSettings()" class="rounded-xl px-3 py-2 bg-slate-900 text-white">Simpan Setting</button>
+          <button onclick="exportJSON()" class="rounded-xl px-3 py-2 bg-white">Backup</button>
+          <button onclick="restoreJSON()" class="rounded-xl px-3 py-2 bg-white">Restore</button>
+          <button onclick="resetData()" class="rounded-xl px-3 py-2 bg-red-500 text-white">Reset Data</button>
+        </div>
+      </section>`;
+    }
+
+    function saveSettings() {
+      mutate(() => {
+        Object.assign(App.db.settings, {
+          storeName: v("stName"), logo: v("stLogo"), address: v("stAddress"), phone: v("stPhone"), email: v("stEmail"), website: v("stWeb"), instagram: v("stIg"), facebook: v("stFb"), tiktok: v("stTt"), whatsapp: v("stWa"), tagline: v("stTag"), thankYou: v("stThank"), language: v("stLang"), currency: v("stCurrency"), dateFormat: v("stDate"), taxPercent: Number(v("stTax")||11), theme: v("stTheme")
+        });
+        App.db.discounts.tax = App.db.settings.taxPercent;
+      });
+      document.documentElement.style.setProperty("--accent", App.db.settings.theme);
+      toast("Setting tersimpan");
+    }
+
+    function exportJSON() { download("backup-pos.json", JSON.stringify(App.db, null, 2), "application/json"); }
+    function restoreJSON() {
+      const txt = prompt("Paste backup JSON");
+      if (!txt) return;
+      try { App.db = JSON.parse(txt); save(); render(); toast("Restore berhasil"); }
+      catch { toast("JSON tidak valid", "err"); }
+    }
+    function resetData() { confirmDialog("Reset semua data?", "() => { App.db = seed(); save(); render(); toast('Data direset'); }"); }
+
+    function download(filename, content, type = "text/plain") {
+      const b = new Blob([content], { type });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function exportCSV(kind) {
+      let rows = [];
+      if (kind === "transactions" || kind === "reports") {
+        rows = [["Invoice", "Tanggal", "Total", "Metode", "Status"], ...App.db.transactions.map(t => [t.id, t.createdAt, t.total, t.method, t.status])];
+      }
+      download(`${kind}.csv`, rows.map(r => r.join(",")).join("\n"), "text/csv");
+    }
+
+    function exportExcel(kind) {
+      let rows = [];
+      if (kind === "transactions" || kind === "reports") rows = [["Invoice", "Tanggal", "Total", "Metode", "Status"], ...App.db.transactions.map(t => [t.id, t.createdAt, t.total, t.method, t.status])];
+      const html = `<table>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}</table>`;
+      download(`${kind}.xls`, html, "application/vnd.ms-excel");
+    }
+
+    function render(pageSwitch = false) {
+      renderNav();
+      const title = NAV.find(n => n.id === App.db.ui.page)?.label || "POS";
+      document.getElementById("pageTitle").textContent = title;
+      document.getElementById("brandName").textContent = App.db.settings.storeName;
+      if (pageSwitch) {
+        document.getElementById("mainContent").innerHTML = `<div class="space-y-2">${Array.from({length:5}).map(()=>`<div class='h-16 rounded-2xl bg-white/70 animate-pulse'></div>`).join("")}</div>`;
+        setTimeout(render, 140);
+        return;
+      }
+
+      const map = {
+        dashboard: renderDashboard,
+        cashier: renderCashier,
+        products: renderProducts,
+        categories: renderCategories,
+        customers: renderCustomers,
+        transactions: renderTransactions,
+        stock: renderStock,
+        reports: renderReports,
+        ai: renderAI,
+        settings: renderSettings
+      };
+      document.getElementById("mainContent").innerHTML = (map[App.db.ui.page] || renderDashboard)();
+
+      if (App.db.ui.page === "dashboard") renderSalesChart();
+
+      const qEl = document.getElementById("q");
+      if (qEl) qEl.oninput = () => { App.productPage = 1; render(); };
+      const cEl = document.getElementById("catFilter");
+      if (cEl) cEl.onchange = () => { App.productPage = 1; render(); };
+      document.getElementById("floatingCart").style.display = App.db.ui.page === "cashier" ? "grid" : "none";
+      const sl = document.getElementById("stLang");
+      if (sl) sl.value = App.db.settings.language;
+    }
+
+    function renderSalesChart() {
+      const ctx = document.getElementById("salesChart");
+      if (!ctx) return;
+      if (App.chartRefs.sales) App.chartRefs.sales.destroy();
+      const day = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(); d.setDate(d.getDate() - (6 - i));
+        return d;
+      });
+      const vals = day.map(d => App.db.transactions.filter(t => new Date(t.createdAt).toDateString() === d.toDateString()).reduce((a, b) => a + b.total, 0));
+      App.chartRefs.sales = new Chart(ctx, {
+        type: "line",
+        data: { labels: day.map(d => d.toLocaleDateString("id-ID", { weekday: "short" })), datasets: [{ data: vals, borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,.15)", fill: true, tension: .35 }] },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    function v(id) { return document.getElementById(id)?.value || ""; }
+    function go(page) { App.db.ui.page = page; save(); render(true); }
+
+    function bind() {
+      document.getElementById("undoBtn").onclick = undo;
+      document.getElementById("redoBtn").onclick = redo;
+      document.getElementById("themeBtn").onclick = () => {
+        const c = prompt("Masukkan warna tema hex", App.db.settings.theme);
+        if (!c) return;
+        mutate(() => App.db.settings.theme = c);
+        document.documentElement.style.setProperty("--accent", c);
+      };
+      document.getElementById("floatingCart").onclick = openCheckout;
+      document.getElementById("installBtn").onclick = async () => {
+        if (App.beforeInstallPrompt) {
+          App.beforeInstallPrompt.prompt();
+          App.beforeInstallPrompt = null;
+        } else toast("Install prompt belum tersedia", "warn");
+      };
+
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        App.beforeInstallPrompt = e;
+      });
+
+      document.getElementById("modalHost").addEventListener("click", e => { if (e.target.id === "modalHost") closeModal(); });
+
+      window.addEventListener("keydown", e => {
+        if (e.ctrlKey && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          if (App.db.ui.page !== "cashier") go("cashier");
+          setTimeout(() => document.getElementById("q")?.focus(), 150);
+        }
+        if (e.ctrlKey && e.key.toLowerCase() === "n") {
+          e.preventDefault();
+          if (App.db.ui.page === "products") openProductForm();
+        }
+        if (e.key === "F2") {
+          e.preventDefault();
+          if (App.db.ui.page === "cashier") openCheckout();
+        }
+      });
+
+      window.addEventListener("online", () => toast("Online mode aktif"));
+      window.addEventListener("offline", () => toast("Offline mode aktif", "warn"));
+    }
+
+    bind();
+    render();
+  </script>
+</body>
+</html>
